@@ -83,18 +83,60 @@ non arrivano dati da più di 60 s, e compare `--` se un sensore è guasto.
 
 ## Installazione sul Raspberry
 
-Raspberry Pi OS **Lite** (Bookworm) sulla SD, poi con internet:
+### 1. Preparare la SD (sul PC)
+
+1. Scaricate **Raspberry Pi Imager** (raspberrypi.com/software).
+2. Dispositivo: *Raspberry Pi Zero* (o *Zero 2 W*); sistema: **Raspberry Pi OS Lite (64-bit
+   per Zero 2 W, 32-bit per Zero / Zero W)**; scheda: la vostra microSD.
+3. Prima di scrivere, in **Modifica impostazioni**:
+   - nome host: `sonda`
+   - utente/password (es. `pi` / una password vostra)
+   - **Wi-Fi** della scuola o dell'hotspot del telefono
+   - scheda *Servizi*: **abilita SSH** (con password)
+4. Scrivete, mettete la SD nel Pi e alimentatelo. Dopo 1-2 minuti è in rete.
+
+> Il Pi Zero *senza* W non ha Wi-Fi: per l'installazione serve un adattatore
+> USB-Ethernet (internet serve solo adesso, in volo no).
+
+### 2. Collegarsi e copiare il programma
+
+Dal PC (Windows: PowerShell; Mac/Linux: Terminale):
 
 ```bash
-git clone <questo repository> && cd SONDA-BALOON-3Q
-sudo ./install.sh
+ssh pi@sonda.local
+```
+
+Sul Raspberry:
+
+```bash
+sudo apt-get install -y git
+git clone -b ccr-665dc920-hbsa5z https://github.com/feedloo/SONDA-BALOON-3Q.git SONDA-BALOON-3Q
+cd SONDA-BALOON-3Q
+```
+
+Se il repository è privato e `git clone` chiede la password, scaricate lo ZIP
+da GitHub sul PC e copiatelo con `scp` (o WinSCP su Windows):
+
+```bash
+# dal PC
+scp -r SONDA-BALOON-3Q pi@sonda.local:/home/pi/
+```
+
+Copiate anche il logo: `assets/logo_marconi.png`.
+
+### 3. Installare
+
+```bash
+cd ~/SONDA-BALOON-3Q
+sudo ./install.sh        # 20-40 minuti su un Pi Zero (compila rpitx)
 sudo reboot
 ```
 
 `install.sh` installa le librerie, compila **rpitx** (solo `sendiq`) con una
 patch che porta la RF sul **GPIO20** invece che sul GPIO4, attiva I2C, UART
-(e disattiva la console seriale e il Bluetooth, che la userebbero) e imposta
-`gpu_freq=250` / `force_turbo=1` per avere una frequenza stabile.
+(e disattiva la console seriale e il Bluetooth, che la userebbero), imposta
+`gpu_freq=250` / `force_turbo=1` per avere una frequenza stabile e prepara il
+servizio di avvio automatico (non ancora attivo).
 
 Verifiche dopo il riavvio:
 
@@ -102,6 +144,39 @@ Verifiche dopo il riavvio:
 i2cdetect -y 1            # deve comparire 48 (ADS1115)
 rpicam-still -o prova.jpg # la camera funziona?
 ```
+
+### 4. Avvio automatico all'accensione
+
+Quando le prove (sotto) sono andate bene:
+
+```bash
+sudo systemctl enable sonda    # da ora parte da solo ad ogni accensione
+sudo reboot                    # oppure: sudo systemctl start sonda
+```
+
+Cosa succede quando date alimentazione:
+
+1. il Raspberry si avvia (~30-40 s su un Pi Zero)
+2. il servizio aspetta **20 secondi** (`ExecStartPre=/bin/sleep 20` in
+   `sonda.service`: cambiate il numero se volete un'attesa diversa, poi
+   rilanciate `sudo ./install.sh` oppure modificate direttamente
+   `/etc/systemd/system/sonda.service` e date `sudo systemctl daemon-reload`)
+3. parte il programma: sensori ogni 10 s, prima immagine dopo ~5 s
+4. se il programma si blocca o va in errore, viene **riavviato da solo** dopo 10 s
+
+Comandi utili:
+
+```bash
+systemctl status sonda         # sta girando?
+journalctl -u sonda -f         # messaggi in diretta (Ctrl+C per uscire)
+sudo systemctl stop sonda      # ferma (es. per lavorare sulla scatola senza trasmettere)
+sudo systemctl disable sonda   # toglie l'avvio automatico
+ls ~/SONDA-BALOON-3Q/dati/     # cartelle dei voli salvati
+```
+
+> Prima del lancio: con il servizio attivo, spegnete e riaccendete la scatola
+> **completa** (batteria vera, niente PC collegato) e controllate con il
+> ricevitore che entro circa un minuto arrivi la prima immagine.
 
 ## Prove (in quest'ordine)
 
@@ -116,9 +191,8 @@ sudo venv/bin/python sonda/main.py --simula
 # 3. trasmissione vera: ampli su CARICO FITTIZIO 50 Ω, ricevitore/SDR vicino in NBFM
 sudo venv/bin/python sonda/main.py
 
-# 4. avvio automatico ad ogni accensione
+# 4. avvio automatico ad ogni accensione (vedi sopra)
 sudo systemctl enable --now sonda
-journalctl -u sonda -f    # per vedere cosa fa
 ```
 
 ## Dati salvati sulla SD
