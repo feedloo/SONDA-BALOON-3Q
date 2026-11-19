@@ -9,6 +9,8 @@ continua e scrive valori vuoti invece di bloccarsi.
 
 import logging
 import os
+import shutil
+import subprocess
 import time
 
 import config
@@ -37,6 +39,7 @@ class DHT11:
         if self.iio:
             self.metodo = "kernel (" + self.iio + ")"
             log.info("DHT11 via driver kernel: %s", self.iio)
+            self._attiva_pullup(gpio)
             return
         try:
             import adafruit_dht
@@ -47,6 +50,25 @@ class DHT11:
                         "aggiungete dtoverlay=dht11,gpiopin=%d in config.txt", gpio)
         except Exception as e:
             log.error("DHT11 non disponibile: %s", e)
+
+    @staticmethod
+    def _attiva_pullup(gpio):
+        """
+        Il driver del kernel lascia il pin senza pull-up interno: senza, la
+        linea DATA è debole e il DHT11 non risponde ("0 signal edges").
+        Attiviamo il pull-up interno del Raspberry (serve root).
+        Una resistenza esterna da 4.7-10 kΩ tra DATA e 3.3 V resta consigliata.
+        """
+        for prog, arg in (("pinctrl", "pu"), ("raspi-gpio", "pu")):
+            if shutil.which(prog):
+                try:
+                    subprocess.run([prog, "set", str(gpio), arg], check=False,
+                                   timeout=5, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+                    log.info("pull-up interno attivato su GPIO%d", gpio)
+                except Exception as e:
+                    log.warning("impossibile attivare il pull-up: %s", e)
+                return
 
     @staticmethod
     def _trova_iio():
