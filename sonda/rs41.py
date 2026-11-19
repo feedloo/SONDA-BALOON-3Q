@@ -108,16 +108,39 @@ def analizza_riga(riga):
 
 
 class LettoreRS41(threading.Thread):
-    """Thread che legge continuamente la seriale e tiene gli ultimi valori."""
+    """
+    Thread che gestisce la seriale XDATA:
+      - legge di continuo quello che arriva dalla RS41 (Pi RX) e tiene gli
+        ultimi valori riconosciuti;
+      - offre scrivi() per mandare i frame XDATA alla RS41 (Pi TX), usato
+        da xdata_tx.TrasmettitoreXDATA sulla stessa porta aperta.
+    Le righe possono finire con CR, LF o CR+LF.
+    """
 
-    def __init__(self, archivio):
+    def __init__(self, archivio=None):
         super().__init__(daemon=True, name="rs41")
         self.archivio = archivio
         self._lock = threading.Lock()
+        self._lock_ser = threading.Lock()
+        self._ser = None
         self._dati = {}
         self._ultimo_agg = None       # time.monotonic() dell'ultimo dato valido
         self._alt_prec = None         # per calcolare la velocità verticale
         self.righe_ricevute = 0
+
+    def scrivi(self, dati):
+        """Scrive byte sulla seriale. Ritorna False se la porta non è aperta."""
+        with self._lock_ser:
+            ser = self._ser
+            if ser is None:
+                return False
+            try:
+                ser.write(dati)
+                ser.flush()
+                return True
+            except Exception as e:
+                log.warning("scrittura seriale fallita: %s", e)
+                return False
 
     def run(self):
         try:
@@ -128,22 +151,39 @@ class LettoreRS41(threading.Thread):
         while True:
             try:
                 with serial.Serial(config.SERIALE_PORTA, config.SERIALE_BAUD,
-                                   timeout=2) as ser:
+                                   timeout=1) as ser:
+                    with self._lock_ser:
+                        self._ser = ser
                     log.info("seriale %s aperta a %d baud",
                              config.SERIALE_PORTA, config.SERIALE_BAUD)
+                    buffer = b""
                     while True:
-                        b = ser.readline()
-                        if not b:
-                            continue
-                        riga = b.decode("ascii", errors="replace").strip()
-                        if not riga:
-                            continue
-                        self.righe_ricevute += 1
-                        self.archivio.scrivi_xdata(riga)
-                        self._aggiorna(analizza_riga(riga))
+                        buffer += ser.read(max(1, ser.in_waiting))
+                        if len(buffer) > 4096:          # niente fine riga: svuoto
+                            self._riga(buffer)
+                            buffer = b""
+                        while True:
+                            pos = [p for p in (buffer.find(b"\r"), buffer.find(b"\n")) if p >= 0]
+                            if not pos:
+                                break
+                            fine = min(pos)
+                            self._riga(buffer[:fine])
+                            buffer = buffer[fine + 1:]
             except Exception as e:
                 log.error("errore seriale: %s (riprovo tra 5 s)", e)
-                time.sleep(5)
+            finally:
+                with self._lock_ser:
+                    self._ser = None
+            time.sleep(5)
+
+    def _riga(self, b):
+        riga = b.decode("ascii", errors="replace").strip()
+        if not riga:
+            return
+        self.righe_ricevute += 1
+        if self.archivio is not None:
+            self.archivio.scrivi_xdata(riga, "RX")
+        self._aggiorna(analizza_riga(riga))
 
     def _aggiorna(self, nuovi):
         if not nuovi:

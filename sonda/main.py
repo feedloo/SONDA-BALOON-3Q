@@ -6,6 +6,8 @@ SONDA 3Q - ITT Marconi Rovereto - IW3BAU
 Programma principale. Lavora con due "fili" (thread) in parallelo:
 
   * thread RS41      : legge di continuo i dati XDATA dalla seriale
+  * thread XDATA TX  : ogni secondo manda alla RS41 un frame OIF411 con
+                       temperatura interna e batteria (la RS41 li trasmette)
   * thread SENSORI   : ogni INTERVALLO_SENSORI_S legge DHT11 + batteria
                        e scrive una riga su telemetria.csv
   * ciclo principale : scatta foto -> impagina -> codifica SSTV ->
@@ -14,6 +16,7 @@ Programma principale. Lavora con due "fili" (thread) in parallelo:
 Uso:
     sudo python3 main.py            # volo vero
     sudo python3 main.py --simula   # tutto vero tranne la trasmissione (salva WAV)
+    sudo python3 main.py --solo-xdata  # solo frame XDATA verso la RS41 (prova seriale)
     python3 main.py --test          # PC senza hardware: crea immagine + WAV di prova
 """
 
@@ -58,8 +61,21 @@ class Stato:
     def __init__(self):
         self.lock = threading.Lock()
         self.sensori = {}
+        # ultima lettura VALIDA di ogni sensore: nome -> (valore, time.monotonic())
+        # (usata dal trasmettitore XDATA per decidere "fresco" o "fallback")
+        self.ultimi_validi = {}
         self.immagini = 0
         self.ora_impostata = False
+        self.xdata_tx = None
+
+
+def aggiorna_validi(stato, letture):
+    ora = time.monotonic()
+    with stato.lock:
+        stato.sensori = letture
+        for k in ("temp_int_c", "umid_int_pct", "batteria_v"):
+            if letture.get(k) is not None:
+                stato.ultimi_validi[k] = (letture[k], ora)
 
 
 def imposta_ora_da_gps(rs):
@@ -85,13 +101,14 @@ def thread_sensori(sensori, lettore, archivio, stato):
         try:
             letture = sensori.leggi()
             rs = lettore.stato() if lettore else {}
+            aggiorna_validi(stato, letture)
             with stato.lock:
-                stato.sensori = letture
                 n_img = stato.immagini
                 if not stato.ora_impostata and rs:
                     stato.ora_impostata = imposta_ora_da_gps(rs)
             riga = dict(rs, **letture, cpu_temp_c=temperatura_cpu(),
-                        immagini_trasmesse=n_img)
+                        immagini_trasmesse=n_img,
+                        xdata_tx_frame=stato.xdata_tx.inviati if stato.xdata_tx else None)
             archivio.scrivi_telemetria(riga)
             log.info("T.int=%s°C  U=%s%%  Batt=%sV  Alt=%s m  (RS41 %s)",
                      letture["temp_int_c"], letture["umid_int_pct"],
@@ -194,12 +211,53 @@ def modo_test(cartella):
         os.path.join(cartella, "test_senza_dati.png"))
 
 
+def modo_solo_xdata():
+    """
+    Prova come tx_xdata_frame_sensors.py: legge DHT11 + ADS1115 e manda
+    solo i frame XDATA alla RS41, stampando una riga per frame.
+    Niente camera, niente radio SSTV, niente archivio su SD.
+    """
+    from rs41 import LettoreRS41
+    from sensori import Sensori
+    import xdata_tx
+    imposta_logging()
+    stato = Stato()
+    lettore = LettoreRS41(archivio=None)
+    lettore.start()
+    sensori = Sensori()
+    tx = xdata_tx.TrasmettitoreXDATA(
+        lettore, xdata_tx.valori_freschi(stato.ultimi_validi, stato.lock), stampa=True)
+    print(f"Trasmetto su {config.SERIALE_PORTA} @ {config.SERIALE_BAUD} baud, 8N1, "
+          f"ogni {config.XDATA_TX_INTERVALLO_S:g} s  (Ctrl+C per fermare)\n")
+    tx.start()
+    inizio = time.monotonic()
+    try:
+        while True:
+            aggiorna_validi(stato, sensori.leggi())
+            time.sleep(2)
+    except KeyboardInterrupt:
+        durata = time.monotonic() - inizio
+        n = max(tx.inviati, 1)
+        print("\n-- riepilogo --")
+        print(f"frame inviati   : {tx.inviati}  in {durata:.0f} s")
+        print(f"temp da DHT11   : {tx.da_sensore_t}/{tx.inviati} "
+              f"({tx.da_sensore_t / n * 100:.0f}%)")
+        print(f"batt da ADS1115 : {tx.da_sensore_b}/{tx.inviati} "
+              f"({tx.da_sensore_b / n * 100:.0f}%)")
+        print(f"righe ricevute dalla RS41: {lettore.righe_ricevute}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Sonda 3Q - IW3BAU")
     ap.add_argument("--test", action="store_true", help="prova senza hardware")
     ap.add_argument("--simula", action="store_true", help="non trasmette, salva WAV")
+    ap.add_argument("--solo-xdata", action="store_true",
+                    help="manda solo i frame XDATA alla RS41 (prova della seriale)")
     args = ap.parse_args()
 
+    if args.solo_xdata:
+        modo_solo_xdata()
+        return
     if args.test:
         modo_test(os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "test_output"))
@@ -220,6 +278,11 @@ def main():
     stato = Stato()
     lettore = LettoreRS41(archivio)
     lettore.start()
+    if config.XDATA_TX_ATTIVO:
+        import xdata_tx
+        stato.xdata_tx = xdata_tx.TrasmettitoreXDATA(
+            lettore, xdata_tx.valori_freschi(stato.ultimi_validi, stato.lock), archivio)
+        stato.xdata_tx.start()
     sensori = Sensori()
     threading.Thread(target=thread_sensori, args=(sensori, lettore, archivio, stato),
                      daemon=True, name="sensori").start()

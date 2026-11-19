@@ -6,7 +6,7 @@ Struttura (una cartella nuova per ogni accensione, niente sovrascritture):
     dati/
       volo_001_2026-11-19_10-30-00/
         telemetria.csv        <- una riga ogni INTERVALLO_SENSORI_S secondi
-        rs41_xdata_raw.log    <- tutto ciò che arriva dalla RS41, grezzo
+        rs41_xdata_raw.log    <- seriale XDATA grezza: RX dalla RS41, TX frame inviati
         immagini.csv          <- elenco immagini trasmesse con i dati usati
         eventi.log            <- log del programma (errori, trasmissioni...)
         foto/                 <- foto originali a piena risoluzione
@@ -39,7 +39,7 @@ COLONNE_TELEMETRIA = [
     "satelliti", "temp_est_c", "umid_est_pct", "press_hpa", "frame_rs41",
     "batt_rs41_v", "rs41_eta_s",
     # stato
-    "cpu_temp_c", "immagini_trasmesse",
+    "cpu_temp_c", "immagini_trasmesse", "xdata_tx_frame",
 ]
 
 COLONNE_IMMAGINI = ["ora_sistema_utc", "uptime_s", "numero", "modo", "file_foto",
@@ -107,9 +107,10 @@ class Archivio:
         d = dict(dati, ora_sistema_utc=ora_sistema(), uptime_s=uptime())
         self._scrivi(self._csv_img, d)
 
-    def scrivi_xdata(self, riga):
+    def scrivi_xdata(self, riga, direzione="RX"):
+        """RX = ricevuto dalla RS41, TX = frame mandato dal Pi alla RS41."""
         with self._lock:
-            self._raw.write(f"{ora_sistema()}\t{uptime()}\t{riga}\n")
+            self._raw.write(f"{ora_sistema()}\t{uptime()}\t{direzione}\t{riga}\n")
 
     def spazio_libero_mb(self):
         return shutil.disk_usage(self.cartella).free / 1e6

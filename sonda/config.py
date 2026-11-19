@@ -42,13 +42,24 @@ BATTERIA_BASSA_V = 10.5
 # --------------------------------------------------------------------------
 # RS41 XDATA (seriale)
 # --------------------------------------------------------------------------
-# Pi TX (GPIO14, pin 8) -> XDATA IN della RS41
-# Pi RX (GPIO15, pin 10) <- XDATA OUT della RS41
+# Pi TX (GPIO14, pin 8) -> XDATA IN della RS41   (frame OIF411 mandati dal Pi)
+# Pi RX (GPIO15, pin 10) <- XDATA OUT della RS41  (dati letti, se la RS41 li manda)
 # GND in comune! Livelli logici 3.3 V (compatibili con il Raspberry).
 SERIALE_PORTA = "/dev/serial0"
 SERIALE_BAUD = 9600      # standard XDATA = 9600 8N1
 # Dopo quanti secondi senza dati validi i valori RS41 sono considerati "vecchi"
 RS41_TIMEOUT_DATI_S = 60
+
+# --- TX XDATA: il Pi manda alla RS41 frame OIF411 con temperatura e batteria,
+#     che la RS41 trasmette a terra (protocollo di tx_xdata_frame_sensors.py)
+XDATA_TX_ATTIVO = True
+XDATA_TX_INTERVALLO_S = 1.0     # ~1 Hz, come sulla daisychain della RS41
+XDATA_STALE_S = 30              # lettura più vecchia di così -> si usa il fallback
+                                # (i sensori si leggono ogni INTERVALLO_SENSORI_S)
+XDATA_FALLBACK_TEMP_C = 22.5    # valori mandati se il sensore non risponde
+XDATA_FALLBACK_BATT_V = 12.3
+XDATA_RADIATION = 0             # nessun sensore: costante (uint20)
+XDATA_CURRENT_MA = 0            # nessun sensore: costante (0..4095)
 
 # --------------------------------------------------------------------------
 # TEMPI

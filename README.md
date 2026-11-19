@@ -3,7 +3,9 @@
 Software per la scatola della sonda stratosferica (Raspberry Pi Zero):
 
 - legge **DHT11** (temperatura/umidità interna) e **ADS1115** (tensione batteria 12 V)
-- legge i dati della **Vaisala RS41** dalla porta **XDATA** (seriale)
+- manda alla **Vaisala RS41**, sulla porta **XDATA**, frame OIF411 con temperatura
+  interna e batteria: la RS41 li trasmette a terra insieme ai suoi dati
+- legge anche eventuali dati in arrivo dalla RS41 sulla stessa seriale
 - salva tutto sulla **SD**, con ora e cartelle ordinate
 - scatta una foto con la **camera v1.2**, la **impagina** con logo, nominativo e
   dati, e la trasmette in **SSTV** su **433.500 MHz** (NBFM) dal **GPIO20**
@@ -43,7 +45,7 @@ non arrivano dati da più di 60 s, e compare `--` se un sensore è guasto.
 | ADS1115 VDD | 3.3 V | 1 | alimentatelo a 3.3 V, non 5 V |
 | DHT11 DATA | GPIO17 | 11 | pull-up 10k verso 3.3 V (se il modulo non l'ha già) |
 | Uscita RF → filtro → ampli | GPIO20 | 38 | GND sul pin 39 |
-| Pi TX → XDATA IN RS41 | GPIO14 | 8 | 3.3 V, 9600 8N1 |
+| Pi TX → XDATA IN RS41 | GPIO14 | 8 | 3.3 V, 9600 8N1, frame OIF411 |
 | Pi RX ← XDATA OUT RS41 | GPIO15 | 10 | |
 | GND comune con RS41 | GND | 6 | **obbligatorio** |
 
@@ -195,6 +197,31 @@ sudo venv/bin/python sonda/main.py
 sudo systemctl enable --now sonda
 ```
 
+## XDATA verso la RS41 (emulazione OIF411)
+
+Ogni secondo il Pi manda alla RS41 un frame di 27 byte, nello stesso formato di
+`tx_xdata_frame_sensors.py` (protocollo identico, verificato byte per byte):
+
+```
+xdata=0501 TTTT RRRRR BB CCC 00 \r
+           |    |     |  |
+           |    |     |  +-- corrente mA (costante, XDATA_CURRENT_MA)
+           |    |     +----- batteria, 0.1 V   (ADS1115)
+           |    +----------- radiazione (costante, XDATA_RADIATION)
+           +---------------- temperatura interna, bit15 = segno, x100 (DHT11)
+```
+
+Se un sensore non ha una lettura valida da più di `XDATA_STALE_S` secondi,
+nel frame va il valore di fallback (`XDATA_FALLBACK_TEMP_C` / `_BATT_V`).
+I frame inviati sono salvati con `TX` in `rs41_xdata_raw.log`.
+
+Prova da sola della seriale (come lo script originale):
+
+```bash
+sudo systemctl stop sonda
+sudo venv/bin/python sonda/main.py --solo-xdata     # Ctrl+C per il riepilogo
+```
+
 ## Dati salvati sulla SD
 
 Ogni accensione crea una nuova cartella (niente sovrascritture):
@@ -202,7 +229,7 @@ Ogni accensione crea una nuova cartella (niente sovrascritture):
 ```
 dati/volo_001_2026-11-19_10-30-00/
   telemetria.csv      ogni 10 s: ora, uptime, T/U interne, batteria, tutti i dati RS41, T CPU
-  rs41_xdata_raw.log  tutte le righe ricevute dalla RS41, con ora
+  rs41_xdata_raw.log  seriale XDATA: RX = ricevuto dalla RS41, TX = frame inviati
   immagini.csv        elenco immagini trasmesse con i dati usati
   eventi.log          log del programma (errori, trasmissioni)
   foto/               foto originali a piena risoluzione (2592x1944)
