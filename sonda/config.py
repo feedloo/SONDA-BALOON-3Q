@@ -31,7 +31,9 @@ ADS_CANALE_BATTERIA = 0  # A0
 #   FATTORE = tensione_vera_batteria / tensione_letta_su_A0
 PARTITORE_R1_OHM = 33000
 PARTITORE_R2_OHM = 10000
-FATTORE_PARTITORE = (PARTITORE_R1_OHM + PARTITORE_R2_OHM) / PARTITORE_R2_OHM
+# FATTORE_PARTITORE = (PARTITORE_R1_OHM + PARTITORE_R2_OHM) / PARTITORE_R2_OHM
+# Calibrato col multimetro il 19/11/2026: 12.36 V veri / 3.074 V letti su A0
+FATTORE_PARTITORE = 12.36 / 3.074
 
 # Soglie batteria 12 V (solo per colorare il valore nell'immagine)
 BATTERIA_OK_V = 11.5

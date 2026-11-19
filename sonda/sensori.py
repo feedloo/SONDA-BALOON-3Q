@@ -8,6 +8,7 @@ continua e scrive valori vuoti invece di bloccarsi.
 """
 
 import logging
+import os
 import time
 
 import config
@@ -17,36 +18,74 @@ log = logging.getLogger("sensori")
 
 class DHT11:
     """
-    Il DHT11 su Linux sbaglia spesso la lettura (problemi di tempistica):
-    è normale, si riprova. NB: il DHT11 misura solo da 0 a 50 °C.
+    Lettura del DHT11 tramite il driver del kernel Linux (overlay "dht11"):
+    il kernel gestisce i tempi al microsecondo, molto più affidabile di una
+    libreria Python. Serve questa riga in /boot/firmware/config.txt
+    (la mette install.sh):
+
+        dtoverlay=dht11,gpiopin=17
+
+    I valori si leggono da /sys/bus/iio/devices/iio:deviceX/ in millesimi.
+    Se l'overlay non c'è, prova con la libreria Adafruit come riserva.
+    NB: il DHT11 misura solo da 0 a 50 °C. Qualche lettura fallita è normale.
     """
 
     def __init__(self, gpio):
-        self.dev = None
+        self.dev = None          # libreria Adafruit (riserva)
+        self.iio = self._trova_iio()
+        self.metodo = None
+        if self.iio:
+            self.metodo = "kernel (" + self.iio + ")"
+            log.info("DHT11 via driver kernel: %s", self.iio)
+            return
         try:
             import adafruit_dht
             import board
-            pin = getattr(board, f"D{gpio}")
-            try:
-                self.dev = adafruit_dht.DHT11(pin)
-            except Exception:
-                self.dev = adafruit_dht.DHT11(pin, use_pulseio=False)
-            log.info("DHT11 pronto su GPIO%d", gpio)
+            self.dev = adafruit_dht.DHT11(getattr(board, f"D{gpio}"), use_pulseio=False)
+            self.metodo = "libreria Adafruit"
+            log.warning("DHT11 via libreria Adafruit (meno affidabile): "
+                        "aggiungete dtoverlay=dht11,gpiopin=%d in config.txt", gpio)
         except Exception as e:
             log.error("DHT11 non disponibile: %s", e)
 
-    def leggi(self, tentativi=4):
+    @staticmethod
+    def _trova_iio():
+        base = "/sys/bus/iio/devices"
+        try:
+            for d in sorted(os.listdir(base)):
+                p = os.path.join(base, d)
+                try:
+                    with open(os.path.join(p, "name")) as f:
+                        nome = f.read().strip()
+                except OSError:
+                    continue
+                if "dht11" in nome and os.path.exists(os.path.join(p, "in_temp_input")):
+                    return p
+        except OSError:
+            pass
+        return None
+
+    def _leggi_iio(self):
+        with open(os.path.join(self.iio, "in_temp_input")) as f:
+            t = int(f.read()) / 1000.0
+        with open(os.path.join(self.iio, "in_humidityrelative_input")) as f:
+            h = int(f.read()) / 1000.0
+        return t, h
+
+    def leggi(self, tentativi=5):
         """Ritorna (temperatura_C, umidita_%) oppure (None, None)."""
-        if self.dev is None:
+        if self.iio is None and self.dev is None:
             return None, None
         for i in range(tentativi):
             try:
-                t = self.dev.temperature
-                h = self.dev.humidity
-                if t is not None and h is not None:
+                if self.iio:
+                    t, h = self._leggi_iio()
+                else:
+                    t, h = self.dev.temperature, self.dev.humidity
+                if t is not None and h is not None and 0 <= h <= 100:
                     return float(t), float(h)
-            except RuntimeError:
-                pass                       # errore di checksum/timing: normale
+            except (OSError, RuntimeError, ValueError):
+                pass                       # lettura fallita: normale, si riprova
             except Exception as e:
                 log.warning("DHT11 errore: %s", e)
             time.sleep(2.1)                # il DHT11 vuole >= 2 s tra le letture

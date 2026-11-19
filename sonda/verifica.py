@@ -60,14 +60,16 @@ else:
 # --------------------------------------------------------------------------
 titolo("2. DHT11 (GPIO17, pin 11)")
 dht = DHT11(config.DHT_GPIO)
-if dht.dev is None:
-    esito("DHT11", False, "libreria non disponibile (rilanciate install.sh)")
+if dht.metodo is None:
+    esito("DHT11", False, "non disponibile: manca 'dtoverlay=dht11,gpiopin=17' in "
+          "config.txt (poi riavviate)")
 else:
+    print(f"  metodo: {dht.metodo}")
     print("  lettura in corso (fino a 10 secondi)...")
     t, h = dht.leggi(tentativi=5)
     if t is None:
         esito("DHT11", False, "nessuna risposta: controllate DATA su pin 11, alimentazione "
-              "3.3 V, GND e la resistenza di pull-up")
+              "3.3 V, GND e la resistenza di pull-up 10k tra DATA e 3.3 V")
     else:
         esito("DHT11", True, f"temperatura {t:.0f} °C, umidità {h:.0f} %")
 
@@ -131,7 +133,8 @@ esito("sendiq (rpitx)", bool(shutil.which("sendiq")),
 cfg = "/boot/firmware/config.txt" if os.path.exists("/boot/firmware/config.txt") else "/boot/config.txt"
 try:
     testo = open(cfg).read()
-    for riga in ("gpu_freq=250", "force_turbo=1", "enable_uart=1", "dtparam=i2c_arm=on"):
+    for riga in ("gpu_freq=250", "force_turbo=1", "enable_uart=1", "dtparam=i2c_arm=on",
+                 f"dtoverlay=dht11,gpiopin={config.DHT_GPIO}"):
         esito(riga, riga in testo, cfg)
 except OSError:
     esito("config.txt", False, "non leggibile")

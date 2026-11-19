@@ -62,6 +62,7 @@ aggiungi "dtparam=i2c_arm=on"
 aggiungi "enable_uart=1"
 aggiungi "dtoverlay=disable-bt"   # su Zero W: UART "vera" su GPIO14/15
 aggiungi "camera_auto_detect=1"
+aggiungi "dtoverlay=dht11,gpiopin=17"   # DHT11 letto dal kernel (affidabile)
 aggiungi "gpu_freq=250"           # richiesto da rpitx per frequenza stabile
 aggiungi "force_turbo=1"
 sed -i 's/console=serial0,[0-9]* //' /boot/firmware/cmdline.txt 2>/dev/null || \
