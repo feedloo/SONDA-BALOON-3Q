@@ -61,7 +61,10 @@ aggiungi() { grep -qxF "$1" "$CFG" || echo "$1" >> "$CFG"; }
 aggiungi "dtparam=i2c_arm=on"
 aggiungi "enable_uart=1"
 aggiungi "dtoverlay=disable-bt"   # su Zero W: UART "vera" su GPIO14/15
-aggiungi "camera_auto_detect=1"
+# camera v1.2 (OV5647) indicata a mano: il rilevamento automatico non la trova sempre
+sed -i 's/^camera_auto_detect=1/camera_auto_detect=0/' "$CFG"
+aggiungi "camera_auto_detect=0"
+aggiungi "dtoverlay=ov5647"
 aggiungi "dtoverlay=dht11,gpiopin=17"   # DHT11 letto dal kernel (affidabile)
 aggiungi "gpu_freq=250"           # richiesto da rpitx per frequenza stabile
 aggiungi "force_turbo=1"
