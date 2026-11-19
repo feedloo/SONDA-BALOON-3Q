@@ -1,0 +1,3 @@
+Mettete qui il logo della scuola con il nome: logo_marconi.png
+(PNG, meglio con sfondo trasparente; viene ridimensionato in automatico).
+Se il file manca, nella barra in alto compare il testo NOME_SCUOLA di config.py.

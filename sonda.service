@@ -1,0 +1,16 @@
+[Unit]
+Description=Sonda 3Q IW3BAU - sensori, archivio SD e trasmissione SSTV 433.5 MHz
+After=multi-user.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/venv/bin/python @DIR@/sonda/main.py
+Restart=always
+RestartSec=10
+Nice=-5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
