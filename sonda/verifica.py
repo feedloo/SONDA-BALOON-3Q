@@ -16,7 +16,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import logging  # noqa: E402
 
-logging.basicConfig(level=logging.CRITICAL)   # niente messaggi tecnici
+logging.basicConfig(level=logging.CRITICAL, format="      dettaglio: %(message)s")
+logging.getLogger("camera").setLevel(logging.ERROR)   # mostra perché la camera fallisce
 
 import config  # noqa: E402
 
