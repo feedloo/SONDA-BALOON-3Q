@@ -1,6 +1,10 @@
 [Unit]
 Description=Sonda 3Q IW3BAU - sensori, archivio SD e trasmissione SSTV 433.4 MHz
-After=multi-user.target
+# Parte presto all'accensione SENZA aspettare la rete né un login:
+# in volo non c'è rete, e se il servizio fosse ordinato dopo
+# multi-user.target resterebbe fermo finché qualcuno non si collega
+# (l'avvio aspetta la rete / cloud-init prima di raggiungere quel target).
+After=local-fs.target sysinit.target
 # niente limite di riavvii: in volo deve ripartire sempre
 StartLimitIntervalSec=0
 
