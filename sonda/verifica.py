@@ -85,11 +85,12 @@ if img is None:
           "programma usi la camera (sudo systemctl stop sonda sstv)")
 else:
     esito("Camera", True, f"foto salvata in {foto}")
-    print(f"      luminosità {info.get('luminosita')} (obiettivo "
-          f"{config.FOTO_LUMINOSITA_OBIETTIVO}), bruciati {info.get('bruciati')}, "
-          f"EV {info.get('ev')} -> prossima {info.get('ev_prossima')}")
-    print(f"      esposizione {info.get('esposizione_us')} us, guadagno "
+    print(f"      modo {info.get('modo')}, luminosità {info.get('luminosita')} "
+          f"(obiettivo {config.FOTO_LUMINOSITA_OBIETTIVO}), bruciati {info.get('bruciati')}")
+    print(f"      tempo di scatto {info.get('esposizione_us')} us, guadagno "
           f"{info.get('guadagno')}, scatti {info.get('tentativo')}")
+    print(f"      prossimo scatto: {info.get('prossimo_tempo_us')} us x "
+          f"{info.get('prossimo_guadagno')}")
 
 # --------------------------------------------------------------------------
 titolo("4. Seriale RS41 (XDATA)")

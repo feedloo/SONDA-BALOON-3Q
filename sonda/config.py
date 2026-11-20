@@ -97,18 +97,26 @@ FOTO_RUOTA_180 = False         # se la camera è montata a testa in giù
 FOTO_QUALITA_JPEG = 90
 
 # --- Regolazione automatica dell'esposizione (vedi camera.py) ---
-FOTO_TEMPO_ASSESTAMENTO_MS = 2500   # tempo per far assestare esposizione e bianco
-FOTO_METERING = "average"           # misura su tutta l'immagine (centre / spot / average)
-FOTO_MODO_ESPOSIZIONE = "sport"     # tempi brevi = meno mosso (normal / sport / long)
+# Dal secondo scatto l'esposizione è decisa dal programma con il TEMPO DI
+# SCATTO PIÙ CORTO POSSIBILE (niente foto mosse); se manca luce si alza il
+# guadagno. NB: con 1/1000 s al CHIUSO le foto vengono scure, è normale:
+# all'aperto di giorno e in quota la luce è più che sufficiente.
+FOTO_ESPOSIZIONE_MANUALE = True
+FOTO_SHUTTER_MAX_US = 1000          # tempo di scatto massimo: 1/1000 s
+FOTO_SHUTTER_MIN_US = 30            # tempo minimo (luce fortissima)
+FOTO_GAIN_MAX = 8.0                 # guadagno massimo (oltre = troppo rumore)
+FOTO_TEMPO_ASSESTAMENTO_MS = 2500   # tempo per far assestare bianco (ed esposizione al 1° scatto)
+FOTO_METERING = "average"           # 1° scatto: misura su tutta l'immagine
+FOTO_MODO_ESPOSIZIONE = "sport"     # 1° scatto: tempi brevi
 FOTO_AWB = "auto"                   # bilanciamento del bianco (auto / daylight / cloudy)
-FOTO_EV_INIZIALE = 0.0              # compensazione di partenza
-FOTO_EV_MIN = -2.0                  # limiti della compensazione automatica
-FOTO_EV_MAX = 1.5
-FOTO_LUMINOSITA_OBIETTIVO = 0.42    # luminosità media desiderata (0 = nero, 1 = bianco)
-FOTO_MAX_BRUCIATI = 0.04            # oltre il 4% di pixel bianchi -> si scurisce
+FOTO_EV_INIZIALE = -0.7             # 1° scatto un po' scuro, per non bruciare
+FOTO_EV_MIN = -2.0                  # limiti EV (usati solo se il modo manuale non va)
+FOTO_EV_MAX = 1.0
+FOTO_LUMINOSITA_OBIETTIVO = 0.33    # luminosità media desiderata (0 = nero, 1 = bianco)
+FOTO_MAX_BRUCIATI = 0.015           # oltre l'1.5% di pixel bianchi -> si scurisce
 FOTO_GUADAGNO_REGOLAZIONE = 0.6     # quanto correggere a ogni scatto (0..1)
-FOTO_LUMINOSITA_MIN = 0.12          # fuori da questi limiti la foto si rifà subito
-FOTO_LUMINOSITA_MAX = 0.80
+FOTO_LUMINOSITA_MIN = 0.10          # fuori da questi limiti la foto si rifà subito
+FOTO_LUMINOSITA_MAX = 0.60
 FOTO_RISCATTA_SE_SBAGLIATA = True
 # Solo sull'immagine SSTV (non sull'originale): contrasto automatico per
 # renderla più leggibile via radio

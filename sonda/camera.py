@@ -1,29 +1,31 @@
 """
 Scatto foto con la Raspberry Pi Camera v1.2 (sensore OV5647), con
-REGOLAZIONE AUTOMATICA dell'esposizione.
+REGOLAZIONE AUTOMATICA dell'esposizione e TEMPO DI SCATTO CORTO (niente mosso).
 
-Due livelli di automatismo:
+Come funziona
+-------------
+1. Primo scatto in automatico (libcamera): la camera misura la luce da sola
+   (metering average, modo "sport" = tempi brevi, EV di partenza negativo
+   per non bruciare). Dai metadati leggiamo tempo di scatto e guadagno usati.
 
-1. Dentro la camera (libcamera): esposizione automatica (AE), bilanciamento
-   del bianco (AWB) e guadagno. Usiamo:
-     --metering average   misura su tutta l'immagine (in quota c'è cielo
-                          nero + terra/nuvole bianche: "centre" sbaglia spesso)
-     --exposure sport     tempi di scatto brevi = meno mosso (il pallone
-                          ruota e oscilla di continuo)
-   e lasciamo 2.5 s alla camera per "assestarsi" prima dello scatto.
+2. Dagli scatti successivi l'esposizione la decidiamo NOI (modo manuale):
+     esposizione totale  E = tempo_di_scatto [us] x guadagno
+   - il tempo di scatto è il PIÙ CORTO possibile: al massimo
+     FOTO_SHUTTER_MAX_US (1/1000 s) -> foto non mosse anche se il pallone
+     ruota e oscilla;
+   - se la luce non basta si alza il guadagno (fino a FOTO_GAIN_MAX), mai
+     il tempo oltre il limite;
+   - dopo ogni foto misuriamo luminosità media e pixel bruciati e
+     correggiamo E per la foto successiva (obiettivo: immagine NON troppo
+     luminosa, cielo e nuvole senza zone bianche piatte).
+   Se una foto è molto sbagliata viene rifatta subito una volta.
 
-2. Controllo nostro tra uno scatto e l'altro: dopo ogni foto misuriamo la
-   luminosità media e quanti pixel sono bruciati (bianchi) o neri, e
-   correggiamo la compensazione EV (--ev) per lo scatto successivo.
-   Se una foto è molto sbagliata (troppo scura/chiara) la rifacciamo subito
-   una volta con la correzione.
+3. Sicurezze: se lo scatto manuale fallisce si torna all'automatico; se
+   anche le opzioni dell'automatico non sono accettate da rpicam-still si
+   usa il comando base. La camera non blocca mai il resto del programma.
 
-Per ogni foto salviamo anche un file .json con i parametri usati
-(tempo di esposizione, guadagno, EV, luminosità...), utile dopo il volo.
-
-Usa il programma di sistema `rpicam-still` (o `libcamera-still`): se la
-camera si blocca, il processo viene ucciso dopo il timeout e il resto del
-programma continua.
+Per ogni foto si salva un .json con modo, tempo di scatto, guadagno,
+luminosità... utile per studiare il volo dopo il recupero.
 """
 
 import json
@@ -48,28 +50,48 @@ def _programma():
     return None
 
 
+def _cfg(nome, default):
+    return getattr(config, nome, default)
+
+
 class Camera:
     def __init__(self):
-        self.ev = float(config.FOTO_EV_INIZIALE)
-        self.opzioni_avanzate = True     # se rpicam-still non le accetta, si spengono
+        self.ev = float(_cfg("FOTO_EV_INIZIALE", 0.0))
+        self.avanzate = True                                  # opzioni libcamera ok?
+        self.manuale = bool(_cfg("FOTO_ESPOSIZIONE_MANUALE", True))
+        self.E = None             # esposizione per il prossimo scatto manuale (us x guadagno)
+        self.sh_max = float(_cfg("FOTO_SHUTTER_MAX_US", 1000))
+        self.sh_min = float(_cfg("FOTO_SHUTTER_MIN_US", 60))
+        self.g_max = float(_cfg("FOTO_GAIN_MAX", 8.0))
 
     # ------------------------------------------------------------------
-    def _comando(self, exe, percorso_jpg, percorso_meta, avanzate):
+    def parametri_manuali(self):
+        """Da E ricava (tempo_us, guadagno): tempo il più corto possibile."""
+        E = min(max(self.E, self.sh_min), self.sh_max * self.g_max)
+        tempo = min(E, self.sh_max)
+        guadagno = min(max(E / tempo, 1.0), self.g_max)
+        return int(round(tempo)), round(guadagno, 2)
+
+    def _comando(self, exe, jpg, meta, modo):
         cmd = [exe, "-n", "-t", str(config.FOTO_TEMPO_ASSESTAMENTO_MS),
                "--width", str(config.FOTO_LARGHEZZA),
                "--height", str(config.FOTO_ALTEZZA),
-               "-q", str(config.FOTO_QUALITA_JPEG), "-o", percorso_jpg]
+               "-q", str(config.FOTO_QUALITA_JPEG), "-o", jpg]
         if config.FOTO_RUOTA_180:
             cmd += ["--rotation", "180"]
-        if avanzate:
+        if modo == "manuale":
+            tempo, guadagno = self.parametri_manuali()
+            cmd += ["--shutter", str(tempo), "--gain", f"{guadagno:.2f}",
+                    "--awb", config.FOTO_AWB, "--metadata", meta]
+        elif modo == "auto":
             cmd += ["--metering", config.FOTO_METERING,
                     "--exposure", config.FOTO_MODO_ESPOSIZIONE,
-                    "--awb", config.FOTO_AWB,
-                    "--ev", f"{self.ev:.1f}",
-                    "--metadata", percorso_meta]
+                    "--awb", config.FOTO_AWB, "--ev", f"{self.ev:.1f}",
+                    "--metadata", meta]
         return cmd
 
-    def _esegui(self, cmd):
+    @staticmethod
+    def _esegui(cmd):
         try:
             r = subprocess.run(cmd, timeout=40, stdout=subprocess.DEVNULL,
                                stderr=subprocess.PIPE)
@@ -80,6 +102,36 @@ class Camera:
             return False, "camera bloccata (timeout), processo interrotto"
         except Exception as e:
             return False, str(e)
+
+    def _scatto_con_ripieghi(self, exe, jpg, meta):
+        """Prova manuale -> auto -> base. Ritorna (ok, modo_usato, errore)."""
+        if self.manuale and self.E is not None:
+            modo = "manuale"
+        elif self.avanzate:
+            modo = "auto"
+        else:
+            modo = "base"
+        ok, err = self._esegui(self._comando(exe, jpg, meta, modo))
+        if ok:
+            return True, modo, ""
+        if modo == "manuale":
+            ok2, err2 = self._esegui(self._comando(exe, jpg, meta, "auto"))
+            if ok2:
+                log.warning("scatto manuale non riuscito (%s): uso l'automatico",
+                            _ultima_riga(err))
+                self.manuale = False
+                return True, "auto", ""
+            modo, err = "auto", err2
+        if modo == "auto":
+            ok3, err3 = self._esegui(self._comando(exe, jpg, meta, "base"))
+            if ok3:
+                log.warning("opzioni camera non accettate (%s): uso il comando base",
+                            _ultima_riga(err))
+                self.avanzate = False
+                self.manuale = False
+                return True, "base", ""
+            err = err3
+        return False, modo, err
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -94,97 +146,107 @@ class Camera:
         neri = sum(hist[:6]) / tot
         return media, bruciati, neri
 
-    def _correzione(self, media, bruciati, neri):
-        """Di quanti EV correggere per avvicinarsi alla luminosità obiettivo."""
+    @staticmethod
+    def correzione(media, bruciati, neri):
+        """Di quanti 'stop' di luminosità correggere (negativo = più scura)."""
         err = math.log2(config.FOTO_LUMINOSITA_OBIETTIVO / max(media, 0.02))
-        if bruciati > config.FOTO_MAX_BRUCIATI:          # troppe zone bianche
-            err = min(err, -0.3 - 3 * (bruciati - config.FOTO_MAX_BRUCIATI))
+        if bruciati > config.FOTO_MAX_BRUCIATI:          # zone bianche: scurisco
+            err = min(err, -0.3 - 4 * (bruciati - config.FOTO_MAX_BRUCIATI))
         elif neri > 0.6 and bruciati < 0.01:              # quasi tutto nero
             err = max(err, 0.5)
-        return err
-
-    def _aggiorna_ev(self, err):
-        nuovo = self.ev + config.FOTO_GUADAGNO_REGOLAZIONE * err
-        self.ev = round(min(config.FOTO_EV_MAX, max(config.FOTO_EV_MIN, nuovo)), 1)
+        return max(-3.0, min(3.0, err))
 
     # ------------------------------------------------------------------
     def scatta(self, percorso_jpg):
         """
         Scatta una foto (piena risoluzione, salvata in percorso_jpg).
         Ritorna (immagine_ridotta_per_SSTV, info) oppure (None, info).
-        L'immagine restituita è ridotta (~1296x972) per lavorare veloci
-        sul Pi Zero; l'originale resta intero sulla SD.
         """
         exe = _programma()
-        info = {"ev": None}
+        info = {}
         if not exe:
             log.error("nessun programma per la camera trovato (rpicam-still)")
             return None, info
-        percorso_meta = os.path.splitext(percorso_jpg)[0] + ".json"
-
+        meta = os.path.splitext(percorso_jpg)[0] + ".json"
         img = None
         tentativi = 2 if config.FOTO_RISCATTA_SE_SBAGLIATA else 1
+        k = config.FOTO_GUADAGNO_REGOLAZIONE
+
         for n in range(tentativi):
-            info = {"ev": self.ev if self.opzioni_avanzate else None, "tentativo": n + 1}
-            ok, err = self._esegui(self._comando(exe, percorso_jpg, percorso_meta,
-                                                 self.opzioni_avanzate))
-            if not ok and self.opzioni_avanzate:
-                # forse questa versione di rpicam-still non accetta qualche
-                # opzione: riprovo con il comando base. Se così funziona, da
-                # ora uso solo quello; se fallisce anche il base, il problema
-                # è la camera (occupata/scollegata) e le opzioni restano.
-                ok_base, err_base = self._esegui(
-                    self._comando(exe, percorso_jpg, percorso_meta, False))
-                if ok_base:
-                    log.warning("opzioni camera non accettate (%s): uso il comando base",
-                                err.strip().splitlines()[-1] if err.strip() else "?")
-                    self.opzioni_avanzate = False
-                    info["ev"] = None
-                ok, err = ok_base, err_base
+            E_prima = self.E
+            ok, modo, err = self._scatto_con_ripieghi(exe, percorso_jpg, meta)
+            info = {"modo": modo, "tentativo": n + 1}
             if not ok:
                 log.error("errore camera: %s", err)
                 return None, info
             try:
                 img = Image.open(percorso_jpg)
-                img.draft("RGB", (1296, 972))     # decodifica JPEG ridotta: veloce
+                img.draft("RGB", (1296, 972))      # decodifica JPEG ridotta: veloce
                 img = img.convert("RGB")
             except Exception as e:
                 log.error("foto illeggibile: %s", e)
                 return None, info
 
             media, bruciati, neri = self.misura(img)
+            m = self._leggi_metadati(meta)
+            info.update(m)
             info.update(luminosita=round(media, 3), bruciati=round(bruciati, 3),
                         neri=round(neri, 3))
-            info.update(self._leggi_metadati(percorso_meta))
-            err_ev = self._correzione(media, bruciati, neri)
-            if self.opzioni_avanzate:
-                self._aggiorna_ev(err_ev)
-            info["ev_prossima"] = self.ev
-            log.info("foto: luminosità %.2f, bruciati %.1f%%, EV %s -> %s, "
-                     "esposizione %s us, guadagno %s",
-                     media, bruciati * 100, info.get("ev"), self.ev,
-                     info.get("esposizione_us"), info.get("guadagno"))
+            err_lum = self.correzione(media, bruciati, neri)
+
+            # esposizione effettivamente usata in questo scatto
+            if modo == "manuale":
+                tempo, guadagno = self.parametri_manuali()
+                info.update(esposizione_us=tempo, guadagno=guadagno)
+                E_usata = tempo * guadagno
+            elif m.get("esposizione_us") and m.get("guadagno"):
+                E_usata = m["esposizione_us"] * m["guadagno"]
+            else:
+                E_usata = None
+            if modo == "auto":
+                info["ev"] = self.ev
+                self.ev = round(min(config.FOTO_EV_MAX,
+                                    max(config.FOTO_EV_MIN, self.ev + k * err_lum)), 1)
+
+            # nuova esposizione per lo scatto successivo (modo manuale):
+            # la luminosità dell'immagine cresce più piano dell'esposizione
+            # (curva gamma), quindi ~2 stop di esposizione per 1 di luminosità
+            if self.manuale and E_usata:
+                E_nuova = E_usata * 2 ** (2.0 * k * err_lum)
+                self.E = min(max(E_nuova, self.sh_min), self.sh_max * self.g_max)
+                t_next, g_next = self.parametri_manuali()
+                info.update(prossimo_tempo_us=t_next, prossimo_guadagno=g_next)
+
+            log.info("foto [%s]: luminosità %.2f, bruciati %.1f%%, scatto %s us, "
+                     "guadagno %s -> prossima %s us x %s",
+                     modo, media, bruciati * 100, info.get("esposizione_us"),
+                     info.get("guadagno"), info.get("prossimo_tempo_us"),
+                     info.get("prossimo_guadagno"))
+
             molto_sbagliata = (media < config.FOTO_LUMINOSITA_MIN
                                or media > config.FOTO_LUMINOSITA_MAX
                                or bruciati > 2 * config.FOTO_MAX_BRUCIATI)
-            if not (molto_sbagliata and self.opzioni_avanzate and n + 1 < tentativi):
+            # rifaccio solo se la correzione cambia davvero qualcosa
+            cambia = (self.E is not None and (E_prima is None
+                                              or abs(math.log2(self.E / E_prima)) > 0.15)) \
+                or modo == "auto"
+            if not (molto_sbagliata and cambia and n + 1 < tentativi):
                 break
-            log.info("foto troppo %s: la rifaccio con EV %.1f",
-                     "scura" if media < config.FOTO_LUMINOSITA_MIN else "chiara", self.ev)
+            log.info("foto troppo %s: la rifaccio subito",
+                     "scura" if media < config.FOTO_LUMINOSITA_MIN else "chiara")
 
-        # salvo i parametri di scatto accanto alla foto
         try:
-            with open(percorso_meta, "w") as f:
+            with open(meta, "w") as f:
                 json.dump(info, f, indent=1)
         except OSError:
             pass
         return img, info
 
     @staticmethod
-    def _leggi_metadati(percorso_meta):
+    def _leggi_metadati(meta):
         """Tempo di esposizione, guadagno ecc. scritti da rpicam-still."""
         try:
-            with open(percorso_meta) as f:
+            with open(meta) as f:
                 m = json.load(f)
         except Exception:
             return {}
@@ -198,6 +260,11 @@ class Camera:
             if isinstance(v, (int, float)):
                 out[nome] = round(v, 2) if isinstance(v, float) else v
         return out
+
+
+def _ultima_riga(testo):
+    righe = testo.strip().splitlines()
+    return righe[-1] if righe else "?"
 
 
 _camera = None

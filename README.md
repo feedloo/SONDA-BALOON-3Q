@@ -23,6 +23,7 @@ sonda/
   radio.py           <- modulazione FM e trasmissione con rpitx
 assets/logo_marconi.png  <- METTETE QUI IL LOGO (PNG, meglio con sfondo trasparente)
 install.sh           <- installazione completa sul Raspberry
+avvia_volo.sh        <- AVVIO PER IL VOLO: controlli + servizio automatico
 sonda.service        <- avvio automatico all'accensione
 ```
 
@@ -223,6 +224,25 @@ Prova da sola della seriale (come lo script originale):
 sudo systemctl stop sonda
 sudo venv/bin/python sonda/main.py --solo-xdata     # Ctrl+C per il riepilogo
 ```
+
+## Avvio per il volo
+
+```bash
+cd ~/SONDA-BALOON-3Q
+sudo ./avvia_volo.sh            # oppure: sudo ./avvia_volo.sh pulisci  (cancella i dati delle prove)
+```
+
+Ferma altri programmi, controlla tutto, attiva il servizio automatico e aspetta
+la prima trasmissione. Quando scrive **TUTTO OK** si può chiudere PuTTY: la
+sonda continua da sola e riparte da sola (dopo 20 s) ad ogni accensione.
+
+## Camera: esposizione automatica e tempo di scatto corto
+
+Il primo scatto è automatico; dal secondo il programma sceglie il **tempo di
+scatto più corto possibile** (massimo 1/1000 s, `FOTO_SHUTTER_MAX_US`) e alza il
+guadagno solo se serve, correggendo dopo ogni foto per non avere immagini
+troppo luminose (`FOTO_LUMINOSITA_OBIETTIVO`, `FOTO_MAX_BRUCIATI`). Al chiuso le
+foto vengono scure (poca luce per 1/1000 s): è normale, all'aperto e in quota no.
 
 ## Dati salvati sulla SD
 
