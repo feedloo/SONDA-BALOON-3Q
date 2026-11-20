@@ -8,7 +8,7 @@ Software per la scatola della sonda stratosferica (Raspberry Pi Zero):
 - legge anche eventuali dati in arrivo dalla RS41 sulla stessa seriale
 - salva tutto sulla **SD**, con ora e cartelle ordinate
 - scatta una foto con la **camera v1.2**, la **impagina** con logo, nominativo e
-  dati, e la trasmette in **SSTV** su **433.500 MHz** (NBFM) dal **GPIO20**
+  dati, e la trasmette in **SSTV** su **433.400 MHz** (NBFM) dal **GPIO20**
 - dopo ogni immagine trasmette l'identificativo in Morse `DE IW3BAU`
 
 ```
@@ -70,10 +70,11 @@ non arrivano dati da più di 60 s, e compare `--` se un sensore è guasto.
    può scendere sotto zero: valutate un DHT22, DS18B20 o BME280.
 4. **Filtro obbligatorio.** Il GPIO genera un'onda quadra piena di armoniche
    (867 MHz, 1.3 GHz...). Controllate con un SDR che dopo filtro + ampli ci
-   sia solo 433.5 MHz. Calibrate l'errore del quarzo del Pi con
+   sia solo 433.4 MHz. Calibrate l'errore del quarzo del Pi con
    `PPM_CORREZIONE` in `config.py`.
-5. **Frequenza e autorizzazioni.** Nel band plan IARU Regione 1, 433.500 MHz
-   è il canale di chiamata FM simplex: verificate con l'OM titolare del
+5. **Frequenza e autorizzazioni.** L'SSTV trasmette su 433.400 MHz
+   (`FREQUENZA_HZ` in `config.py`), un canale FM simplex del band plan IARU
+   Regione 1 (433.500 è il canale di chiamata, da evitare): verificate con l'OM titolare del
    nominativo / la sezione ARI la frequenza più adatta e le regole per
    trasmettere da un pallone. Il lancio richiede le autorizzazioni ENAC.
 6. **Ampli e calore.** In quota non c'è aria per raffreddare l'ampli da 2 W:
@@ -243,7 +244,7 @@ all'atterraggio si perde al massimo l'ultima riga.
 
 ## Ricezione a terra
 
-Ricevitore o SDR su **433.500 MHz NBFM**, audio nel PC con **MMSSTV**
+Ricevitore o SDR su **433.400 MHz NBFM**, audio nel PC con **MMSSTV**
 (Windows), **QSSTV** (Linux) o sul telefono con l'app **Robot36**.
 Il modo si sceglie in `config.py` (`MODO_SSTV`):
 

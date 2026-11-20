@@ -1,5 +1,5 @@
 [Unit]
-Description=Sonda 3Q IW3BAU - sensori, archivio SD e trasmissione SSTV 433.5 MHz
+Description=Sonda 3Q IW3BAU - sensori, archivio SD e trasmissione SSTV 433.4 MHz
 After=multi-user.target
 # niente limite di riavvii: in volo deve ripartire sempre
 StartLimitIntervalSec=0

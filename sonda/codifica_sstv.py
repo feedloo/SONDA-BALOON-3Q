@@ -3,7 +3,7 @@ Codificatore SSTV (Robot36, Martin M1, PD120) scritto con numpy.
 
 L'immagine viene trasformata in una lista di "segmenti" (frequenza, durata),
 poi i segmenti vengono sintetizzati in un'onda audio a fase continua.
-Quell'audio è quello che un ricevitore FM sintonizzato a 433.500 MHz
+Quell'audio è quello che un ricevitore FM sintonizzato a 433.400 MHz
 "sente" e che MMSSTV / QSSTV / app Robot36 decodificano.
 
 Per efficienza (il Pi Zero è lento) i pixel non sono generati uno alla volta

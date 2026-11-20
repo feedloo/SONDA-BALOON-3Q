@@ -5,7 +5,7 @@ Come funziona:
   1. l'immagine impaginata diventa audio SSTV (sstv.py)
   2. l'audio viene modulato in FM "in banda base" (campioni I/Q complessi)
   3. il programma `sendiq` di rpitx usa il generatore di clock del Raspberry
-     per produrre direttamente la portante a 433.500 MHz su un pin GPIO.
+     per produrre direttamente la portante a 433.400 MHz su un pin GPIO.
 
 ATTENZIONE: il segnale del pin è un'onda QUADRA, piena di armoniche
 (867 MHz, 1.3 GHz, ...). Il filtro passa-basso/passa-banda DEVE stare

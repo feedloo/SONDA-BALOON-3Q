@@ -11,7 +11,7 @@ Programma principale. Lavora con due "fili" (thread) in parallelo:
   * thread SENSORI   : ogni INTERVALLO_SENSORI_S legge DHT11 + batteria
                        e scrive una riga su telemetria.csv
   * ciclo principale : scatta foto -> impagina -> codifica SSTV ->
-                       trasmette a 433.500 MHz -> pausa -> ripete
+                       trasmette a 433.400 MHz -> pausa -> ripete
 
 Uso:
     sudo python3 main.py            # volo vero
@@ -142,7 +142,7 @@ def ciclo_immagini(archivio, stato, lettore):
       1. foto con esposizione automatica  -> foto/img_....jpg (+ .json)
       2. impaginazione con i dati attuali -> sstv/img_....png  (= ciò che va giù)
       3. codifica SSTV + FM               -> sstv/img_....wav  (= audio trasmesso)
-      4. trasmissione a 433.5 MHz
+      4. trasmissione a 433.4 MHz
       5. riga in immagini.csv
     Dopo ogni trasmissione c'è comunque almeno PAUSA_MINIMA_TX_S di pausa.
     """

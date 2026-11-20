@@ -73,7 +73,7 @@ PAUSA_MINIMA_TX_S = 10         # pausa minima garantita dopo ogni trasmissione, 
 # --------------------------------------------------------------------------
 # RADIO / SSTV
 # --------------------------------------------------------------------------
-FREQUENZA_HZ = 433.500e6
+FREQUENZA_HZ = 433.400e6        # frequenza SSTV (433.400 MHz)
 # Modo SSTV: "robot36" (~36 s, 320x240), "martin1" (~114 s, 320x256),
 #            "pd120" (~126 s, 640x496, qualità migliore)
 MODO_SSTV = "robot36"
