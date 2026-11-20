@@ -65,9 +65,10 @@ XDATA_CURRENT_MA = 0            # nessun sensore: costante (0..4095)
 # TEMPI
 # --------------------------------------------------------------------------
 INTERVALLO_SENSORI_S = 10      # ogni quanti secondi leggere DHT11 + batteria e salvare
-PAUSA_TRA_IMMAGINI_S = 90      # pausa tra la fine di una trasmissione e la successiva
-                               # (serve anche a far raffreddare l'ampli: in quota non
-                               #  c'è aria che lo raffreddi!)
+INTERVALLO_IMMAGINI_S = 60     # una nuova immagine ogni 60 s (da inizio a inizio)
+PAUSA_MINIMA_TX_S = 10         # pausa minima garantita dopo ogni trasmissione, anche se
+                               # foto+codifica+TX superano i 60 s (raffreddamento ampli:
+                               # in quota non c'è aria che lo raffreddi!)
 
 # --------------------------------------------------------------------------
 # RADIO / SSTV
@@ -93,11 +94,36 @@ SOLO_SIMULAZIONE = False
 FOTO_LARGHEZZA = 2592          # risoluzione piena camera v1.2 (OV5647)
 FOTO_ALTEZZA = 1944
 FOTO_RUOTA_180 = False         # se la camera è montata a testa in giù
+FOTO_QUALITA_JPEG = 90
+
+# --- Regolazione automatica dell'esposizione (vedi camera.py) ---
+FOTO_TEMPO_ASSESTAMENTO_MS = 2500   # tempo per far assestare esposizione e bianco
+FOTO_METERING = "average"           # misura su tutta l'immagine (centre / spot / average)
+FOTO_MODO_ESPOSIZIONE = "sport"     # tempi brevi = meno mosso (normal / sport / long)
+FOTO_AWB = "auto"                   # bilanciamento del bianco (auto / daylight / cloudy)
+FOTO_EV_INIZIALE = 0.0              # compensazione di partenza
+FOTO_EV_MIN = -2.0                  # limiti della compensazione automatica
+FOTO_EV_MAX = 1.5
+FOTO_LUMINOSITA_OBIETTIVO = 0.42    # luminosità media desiderata (0 = nero, 1 = bianco)
+FOTO_MAX_BRUCIATI = 0.04            # oltre il 4% di pixel bianchi -> si scurisce
+FOTO_GUADAGNO_REGOLAZIONE = 0.6     # quanto correggere a ogni scatto (0..1)
+FOTO_LUMINOSITA_MIN = 0.12          # fuori da questi limiti la foto si rifà subito
+FOTO_LUMINOSITA_MAX = 0.80
+FOTO_RISCATTA_SE_SBAGLIATA = True
+# Solo sull'immagine SSTV (non sull'originale): contrasto automatico per
+# renderla più leggibile via radio
+SSTV_CONTRASTO_AUTO = True
 
 # --------------------------------------------------------------------------
 # ARCHIVIO SU SD
 # --------------------------------------------------------------------------
 # Vuoto = cartella "dati" dentro il progetto (es. /home/pi/SONDA-BALOON-3Q/dati)
 CARTELLA_DATI = ""
-SALVA_WAV = False              # salva anche l'audio SSTV (occupa ~3-12 MB a immagine)
-SPAZIO_MINIMO_MB = 200         # sotto questa soglia smette di salvare le foto grandi
+# Per ogni immagine si salvano SEMPRE: la foto originale (foto/*.jpg + .json con
+# i parametri di scatto) e l'immagine trasmessa in SSTV (sstv/*.png).
+SALVA_WAV = True               # salva anche l'audio SSTV esattamente come trasmesso
+                               # (sstv/*.wav, ~4 MB a immagine in Robot36)
+SPAZIO_MINIMO_MB = 300         # sotto questa soglia non salva più foto grandi e WAV
+                               # (telemetria e immagini SSTV continuano)
+# File temporaneo per la radio: in RAM (/dev/shm) per non consumare la SD
+CARTELLA_TEMP_RADIO = "/dev/shm"

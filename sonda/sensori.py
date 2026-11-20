@@ -174,7 +174,7 @@ class Sensori:
         self.ads = ADS1115(config.ADS_I2C_ADDR)
 
     def leggi(self):
-        t, h = self.dht.leggi()
+        t, h = self.dht.leggi(tentativi=3)   # max ~6 s: non sfora i 10 s del ciclo
         v_pin = self.ads.leggi(config.ADS_CANALE_BATTERIA)
         v_batt = v_pin * config.FATTORE_PARTITORE if v_pin is not None else None
         return {

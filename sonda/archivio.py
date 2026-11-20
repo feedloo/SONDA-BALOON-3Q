@@ -9,8 +9,10 @@ Struttura (una cartella nuova per ogni accensione, niente sovrascritture):
         rs41_xdata_raw.log    <- seriale XDATA grezza: RX dalla RS41, TX frame inviati
         immagini.csv          <- elenco immagini trasmesse con i dati usati
         eventi.log            <- log del programma (errori, trasmissioni...)
-        foto/                 <- foto originali a piena risoluzione
+        foto/                 <- foto originali a piena risoluzione (.jpg) e
+                                 parametri di scatto (.json: EV, esposizione...)
         sstv/                 <- immagini impaginate esattamente come trasmesse
+                                 (.png) e audio SSTV trasmesso (.wav)
 
 Il Pi Zero non ha un orologio con batteria: senza internet l'ora di
 sistema all'accensione può essere sbagliata. Per questo ogni riga ha
@@ -42,9 +44,18 @@ COLONNE_TELEMETRIA = [
     "cpu_temp_c", "immagini_trasmesse", "xdata_tx_frame",
 ]
 
-COLONNE_IMMAGINI = ["ora_sistema_utc", "uptime_s", "numero", "modo", "file_foto",
-                    "file_sstv", "trasmessa", "durata_tx_s", "alt_m", "lat", "lon",
-                    "temp_int_c", "batteria_v"]
+COLONNE_IMMAGINI = [
+    "ora_sistema_utc", "uptime_s", "numero", "modo",
+    # file salvati: foto originale, immagine trasmessa, audio trasmesso
+    "file_foto", "file_sstv", "file_wav",
+    # trasmissione
+    "trasmessa", "ora_inizio_tx_utc", "durata_audio_s", "durata_tx_reale_s",
+    "tempo_codifica_s",
+    # camera (regolazione automatica)
+    "ev", "esposizione_us", "guadagno", "luminosita", "bruciati", "tentativo",
+    # dati stampati nell'immagine
+    "alt_m", "lat", "lon", "temp_int_c", "batteria_v",
+]
 
 _AVVIO = time.monotonic()
 
@@ -84,6 +95,7 @@ class Archivio:
         self._csv_img = self._apri_csv("immagini.csv", COLONNE_IMMAGINI)
         self._raw = open(os.path.join(self.cartella, "rs41_xdata_raw.log"),
                          "a", buffering=1, encoding="utf-8")
+        self._raw_sync = time.monotonic()
 
     def _apri_csv(self, nome, colonne):
         f = open(os.path.join(self.cartella, nome), "a", newline="", encoding="utf-8")
@@ -111,9 +123,18 @@ class Archivio:
         """RX = ricevuto dalla RS41, TX = frame mandato dal Pi alla RS41."""
         with self._lock:
             self._raw.write(f"{ora_sistema()}\t{uptime()}\t{direzione}\t{riga}\n")
+            # forza la scrittura fisica sulla SD ogni 10 s (non a ogni riga:
+            # arrivano 1-2 righe al secondo e la SD si consumerebbe)
+            if time.monotonic() - self._raw_sync >= 10:
+                self._raw.flush()
+                os.fsync(self._raw.fileno())
+                self._raw_sync = time.monotonic()
 
     def spazio_libero_mb(self):
-        return shutil.disk_usage(self.cartella).free / 1e6
+        try:
+            return shutil.disk_usage(self.cartella).free / 1e6
+        except OSError:
+            return 0.0
 
     def percorso_log(self):
         return os.path.join(self.cartella, "eventi.log")

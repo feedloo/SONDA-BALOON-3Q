@@ -16,6 +16,10 @@ Restart=always
 RestartSec=10
 Nice=-5
 Environment=PYTHONUNBUFFERED=1
+# allo stop: 20 s per chiudere bene (finisce di scrivere i file), poi in
+# ogni caso il pin RF viene rimesso a riposo (nessun segnale verso l'ampli)
+TimeoutStopSec=20
+ExecStopPost=-/bin/sh -c 'pinctrl set 20 ip 2>/dev/null || raspi-gpio set 20 ip 2>/dev/null || true'
 
 [Install]
 WantedBy=multi-user.target

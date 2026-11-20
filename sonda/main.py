@@ -23,6 +23,7 @@ Uso:
 import argparse
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -96,8 +97,9 @@ def imposta_ora_da_gps(rs):
 
 
 def thread_sensori(sensori, lettore, archivio, stato):
+    """Ogni INTERVALLO_SENSORI_S esatti: legge i sensori e scrive una riga CSV."""
+    prossimo = time.monotonic()
     while True:
-        t0 = time.monotonic()
         try:
             letture = sensori.leggi()
             rs = lettore.stato() if lettore else {}
@@ -116,7 +118,13 @@ def thread_sensori(sensori, lettore, archivio, stato):
                      rs.get("alt_m"), "ok" if not rs.get("rs41_vecchi", True) else "assente")
         except Exception:
             log.exception("errore nel ciclo sensori")
-        time.sleep(max(1.0, config.INTERVALLO_SENSORI_S - (time.monotonic() - t0)))
+        # cadenza fissa: la prossima lettura è esattamente 10 s dopo la precedente
+        prossimo += config.INTERVALLO_SENSORI_S
+        attesa = prossimo - time.monotonic()
+        if attesa < 0:                       # siamo in ritardo: riparto da adesso
+            prossimo = time.monotonic()
+            attesa = 0
+        time.sleep(attesa)
 
 
 def dati_per_immagine(stato, lettore):
@@ -129,55 +137,90 @@ def dati_per_immagine(stato, lettore):
 
 
 def ciclo_immagini(archivio, stato, lettore):
+    """
+    Ogni INTERVALLO_IMMAGINI_S (da inizio a inizio):
+      1. foto con esposizione automatica  -> foto/img_....jpg (+ .json)
+      2. impaginazione con i dati attuali -> sstv/img_....png  (= ciò che va giù)
+      3. codifica SSTV + FM               -> sstv/img_....wav  (= audio trasmesso)
+      4. trasmissione a 433.5 MHz
+      5. riga in immagini.csv
+    Dopo ogni trasmissione c'è comunque almeno PAUSA_MINIMA_TX_S di pausa.
+    """
     import camera
+    cam = camera.Camera()
     while True:
+        t_ciclo = time.monotonic()
+        riga = {"modo": config.MODO_SSTV, "trasmessa": 0}
         try:
             with stato.lock:
                 stato.immagini += 1
                 n = stato.immagini
             base = f"img_{n:04d}_{time.strftime('%H%M%S')}"
+            riga["numero"] = n
+            spazio_ok = archivio.spazio_libero_mb() >= config.SPAZIO_MINIMO_MB
 
-            # 1) foto (salvata solo se c'è spazio sulla SD)
+            # 1) foto originale (a piena risoluzione, con parametri di scatto)
             foto_path = os.path.join(archivio.foto, base + ".jpg")
-            foto = camera.scatta(foto_path)
-            if foto is not None and archivio.spazio_libero_mb() < config.SPAZIO_MINIMO_MB:
-                os.remove(foto_path)
-                foto_path = ""
-            elif foto is None:
-                foto_path = ""
+            foto, info_cam = cam.scatta(foto_path)
+            if foto is not None and not spazio_ok:
+                for p in (foto_path, os.path.splitext(foto_path)[0] + ".json"):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                log.warning("SD quasi piena: foto originale non conservata")
+            elif foto is not None:
+                riga["file_foto"] = os.path.basename(foto_path)
+            for k in ("ev", "esposizione_us", "guadagno", "luminosita", "bruciati",
+                      "tentativo"):
+                riga[k] = info_cam.get(k)
 
-            # 2) impaginazione con i dati più recenti
+            # 2) immagine impaginata = esattamente ciò che viene trasmesso
             dati = dati_per_immagine(stato, lettore)
             img = impaginazione.impagina(foto, dati, n)
             sstv_path = os.path.join(archivio.sstv, base + ".png")
             img.save(sstv_path)
+            riga["file_sstv"] = os.path.basename(sstv_path)
+            for k in ("alt_m", "lat", "lon", "temp_int_c", "batteria_v"):
+                riga[k] = dati.get(k)
+            del foto
 
-            # 3) codifica SSTV + modulazione FM
+            # 3) codifica SSTV + modulazione FM (I/Q in RAM, WAV sulla SD)
             seg = radio.prepara_audio(img, config.MODO_SSTV)
-            iq_path = os.path.join(archivio.cartella, "tx_temp.iq")
-            wav_path = (os.path.join(archivio.sstv, base + ".wav")
-                        if (config.SALVA_WAV or config.SOLO_SIMULAZIONE) else None)
+            durata_stimata = seg.durata_s()
+            iq_path = radio.percorso_temp_iq(archivio.cartella, durata_stimata)
+            wav_path = None
+            if config.SALVA_WAV and spazio_ok:
+                wav_path = os.path.join(archivio.sstv, base + ".wav")
             t0 = time.monotonic()
             durata = radio.genera_file(seg, iq_path, wav_path)
-            log.info("immagine #%d codificata (%s, %.0f s audio) in %.0f s",
-                     n, config.MODO_SSTV, durata, time.monotonic() - t0)
+            riga["tempo_codifica_s"] = round(time.monotonic() - t0, 1)
+            riga["durata_audio_s"] = round(durata, 1)
+            if wav_path and os.path.exists(wav_path):
+                riga["file_wav"] = os.path.basename(wav_path)
+            log.info("immagine #%d pronta (%s, %.0f s di audio) in %.0f s",
+                     n, config.MODO_SSTV, durata, riga["tempo_codifica_s"])
+            del seg, img
 
             # 4) trasmissione
-            ok = radio.trasmetti(iq_path, durata)
-            archivio.scrivi_immagine({
-                "numero": n, "modo": config.MODO_SSTV,
-                "file_foto": os.path.basename(foto_path),
-                "file_sstv": os.path.basename(sstv_path),
-                "trasmessa": int(ok), "durata_tx_s": round(durata, 1),
-                "alt_m": dati.get("alt_m"), "lat": dati.get("lat"),
-                "lon": dati.get("lon"), "temp_int_c": dati.get("temp_int_c"),
-                "batteria_v": dati.get("batteria_v"),
-            })
-            del foto, img, seg
+            riga["ora_inizio_tx_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            ok, reale = radio.trasmetti(iq_path, durata)
+            riga["trasmessa"] = int(ok)
+            riga["durata_tx_reale_s"] = round(reale, 1)
         except Exception:
             log.exception("errore nel ciclo immagini")
-            time.sleep(10)
-        time.sleep(config.PAUSA_TRA_IMMAGINI_S)
+        finally:
+            # 5) la riga in immagini.csv si scrive SEMPRE, anche se qualcosa è fallito
+            try:
+                if "numero" in riga:
+                    archivio.scrivi_immagine(riga)
+            except Exception:
+                log.exception("impossibile scrivere immagini.csv")
+
+        trascorso = time.monotonic() - t_ciclo
+        attesa = max(config.PAUSA_MINIMA_TX_S, config.INTERVALLO_IMMAGINI_S - trascorso)
+        log.info("ciclo immagine durato %.0f s, prossima tra %.0f s", trascorso, attesa)
+        time.sleep(attesa)
 
 
 def modo_test(cartella):
@@ -269,9 +312,18 @@ def main():
     from rs41 import LettoreRS41
     from sensori import Sensori
 
+    # arresto pulito (systemctl stop / spegnimento): SIGTERM diventa un'uscita
+    # normale, così i blocchi "finally" spengono il pin RF e chiudono i file
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    radio.rilascia_pin_rf()      # se un crash precedente l'aveva lasciato acceso
+
     archivio = Archivio()
     imposta_logging(archivio.percorso_log())
     log.info("=== SONDA %s avviata, dati in %s ===", config.CALLSIGN, archivio.cartella)
+    log.info("sensori ogni %d s, un'immagine ogni %d s (%s, %.3f MHz)%s",
+             config.INTERVALLO_SENSORI_S, config.INTERVALLO_IMMAGINI_S, config.MODO_SSTV,
+             config.FREQUENZA_HZ / 1e6, "  [SIMULAZIONE: niente TX]"
+             if config.SOLO_SIMULAZIONE else "")
     if not config.SOLO_SIMULAZIONE and os.geteuid() != 0:
         log.warning("non sono root: rpitx (sendiq) non potrà trasmettere! Usare sudo.")
 
@@ -288,7 +340,11 @@ def main():
                      daemon=True, name="sensori").start()
 
     time.sleep(5)    # lascia arrivare le prime letture
-    ciclo_immagini(archivio, stato, lettore)
+    try:
+        ciclo_immagini(archivio, stato, lettore)
+    finally:
+        radio.rilascia_pin_rf()
+        log.info("=== SONDA fermata ===")
 
 
 if __name__ == "__main__":

@@ -108,6 +108,13 @@ def impagina(foto, dati, numero, modo=None):
     # ---- sfondo: foto ritagliata a riempire tutto il riquadro ----
     if foto is not None:
         base = ImageOps.fit(foto.convert("RGB"), (W, H), Image.LANCZOS)
+        if getattr(config, "SSTV_CONTRASTO_AUTO", False):
+            # allunga il contrasto (taglia l'1% più scuro/chiaro) mantenendo
+            # i colori: via radio un'immagine piatta si legge peggio
+            try:
+                base = ImageOps.autocontrast(base, cutoff=1, preserve_tone=True)
+            except TypeError:                      # Pillow vecchio
+                base = ImageOps.autocontrast(base, cutoff=1)
     else:
         base = Image.new("RGB", (W, H), (40, 40, 40))
         d0 = ImageDraw.Draw(base)

@@ -75,16 +75,21 @@ else:
         esito("DHT11", True, f"temperatura {t:.0f} °C, umidità {h:.0f} %")
 
 # --------------------------------------------------------------------------
-titolo("3. Camera")
+titolo("3. Camera (con esposizione automatica)")
 import camera  # noqa: E402
 
 foto = os.path.join(tempfile.gettempdir(), "verifica_camera.jpg")
-img = camera.scatta(foto)
+img, info = camera.Camera().scatta(foto)
 if img is None:
-    esito("Camera", False, "nessuna foto: controllate il verso della piattina "
-          "(contatti verso la scheda) e che sia ben inserita")
+    esito("Camera", False, "nessuna foto: controllate la piattina, e che nessun altro "
+          "programma usi la camera (sudo systemctl stop sonda sstv)")
 else:
-    esito("Camera", True, f"foto {img.size[0]}x{img.size[1]} salvata in {foto}")
+    esito("Camera", True, f"foto salvata in {foto}")
+    print(f"      luminosità {info.get('luminosita')} (obiettivo "
+          f"{config.FOTO_LUMINOSITA_OBIETTIVO}), bruciati {info.get('bruciati')}, "
+          f"EV {info.get('ev')} -> prossima {info.get('ev_prossima')}")
+    print(f"      esposizione {info.get('esposizione_us')} us, guadagno "
+          f"{info.get('guadagno')}, scatti {info.get('tentativo')}")
 
 # --------------------------------------------------------------------------
 titolo("4. Seriale RS41 (XDATA)")

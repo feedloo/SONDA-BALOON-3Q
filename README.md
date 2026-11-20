@@ -77,8 +77,9 @@ non arrivano dati da più di 60 s, e compare `--` se un sensore è guasto.
    nominativo / la sezione ARI la frequenza più adatta e le regole per
    trasmettere da un pallone. Il lancio richiede le autorizzazioni ENAC.
 6. **Ampli e calore.** In quota non c'è aria per raffreddare l'ampli da 2 W:
-   per questo c'è una pausa tra le trasmissioni (`PAUSA_TRA_IMMAGINI_S`).
-   Robot36 = ~44 s di trasmissione, poi 90 s di pausa.
+   per questo dopo ogni trasmissione c'è almeno `PAUSA_MINIMA_TX_S` di pausa.
+   Con Robot36 (~44 s di trasmissione) e un'immagine ogni 60 s l'ampli
+   trasmette circa il 70% del tempo: verificate che regga senza scaldare troppo.
 7. **Ora.** Il Pi Zero non ha orologio a batteria: senza internet l'ora è
    sbagliata. Il programma la corregge dalla data/ora GPS della RS41 se
    disponibile; in ogni riga c'è anche `uptime_s` (secondi dall'accensione).
