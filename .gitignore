@@ -4,3 +4,11 @@ venv/
 dati/
 test_output/
 *.iq
+
+# mai pubblicare: dati di volo/prove, log, credenziali, file temporanei
+*.log
+*.wav
+.env
+*.pem
+*.key
+wpa_supplicant.conf
