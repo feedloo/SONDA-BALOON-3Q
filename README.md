@@ -115,12 +115,12 @@ Sul Raspberry:
 
 ```bash
 sudo apt-get install -y git
-git clone -b ccr-665dc920-hbsa5z https://github.com/feedloo/SONDA-BALOON-3Q.git SONDA-BALOON-3Q
+git clone https://github.com/feedloo/SONDA-BALOON-3Q.git
 cd SONDA-BALOON-3Q
 ```
 
-Se il repository è privato e `git clone` chiede la password, scaricate lo ZIP
-da GitHub sul PC e copiatelo con `scp` (o WinSCP su Windows):
+Senza internet sul Raspberry: scaricate lo ZIP da GitHub (pulsante **Code →
+Download ZIP**) sul PC e copiatelo con `scp` (o WinSCP su Windows):
 
 ```bash
 # dal PC
